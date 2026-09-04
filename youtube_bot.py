@@ -8,6 +8,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import os
 
 # -------------------- الإعدادات --------------------
 VIDEO_URL = "https://youtu.be/TCza4Ml9xKs?si=93nVcyRP0u1iCPGU"
@@ -25,8 +26,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def create_driver():
-    """إنشاء متصفح Chrome."""
+    """إنشاء متصفح Chrome/Chromium."""
     chrome_options = Options()
+    
+    # تحديد مسار Chromium في GitHub Actions
+    chrome_options.binary_location = "/usr/bin/chromium-browser"
+    
     if HEADLESS:
         chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
@@ -48,7 +53,9 @@ def create_driver():
     ]
     chrome_options.add_argument(f"--user-agent={random.choice(user_agents)}")
 
-    driver = webdriver.Chrome(options=chrome_options)
+    # استخدام ChromiumDriver
+    service = Service("/usr/bin/chromedriver")
+    driver = webdriver.Chrome(service=service, options=chrome_options)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return driver
 
