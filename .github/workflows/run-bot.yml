@@ -1,34 +1,33 @@
-name: Run YouTube Bot
+name: YouTube Bot
 
 on:
+  workflow_dispatch:  # للتشغيل اليدوي
   schedule:
-    - cron: '0 * * * *'   # كل ساعة
-  workflow_dispatch:       # تشغيل يدوي من التبويب Actions
+    - cron: '0 * * * *'  # كل ساعة
 
 jobs:
-  run-bot:
+  run:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          pip install undetected-chromedriver selenium selenium-stealth
-
+          
       - name: Install Chrome
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget unzip
+          sudo apt-get install -y wget gnupg
           wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
           sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
           sudo apt-get update
           sudo apt-get install -y google-chrome-stable
-
+          sudo apt-get install -y chromium-chromedriver
+          
+      - name: Install Python dependencies
+        run: |
+          pip install selenium
+          
       - name: Run bot
         run: python youtube_bot.py
