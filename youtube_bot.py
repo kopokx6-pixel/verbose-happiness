@@ -3,21 +3,23 @@ import random
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import os
 
 # -------------------- الإعدادات --------------------
 VIDEO_URL = "https://youtu.be/TCza4Ml9xKs?si=93nVcyRP0u1iCPGU"
-NUMBER_OF_SESSIONS = 3
-WATCH_DURATION = 30
-MAX_WORKERS = 2
+NUMBER_OF_SESSIONS = 80        # 80 جلسة
+WATCH_DURATION = 60            # دقيقة لكل جلسة
+MAX_WORKERS = 5                # 5 متصفحات متوازية
 HEADLESS = True
 
-# -------------------- السجل --------------------
+# إعدادات إضافية
+RANDOM_DELAY = True            # تأخير عشوائي بين الجلسات
+MIN_DELAY = 1                  # ثانية
+MAX_DELAY = 3                  # ثواني
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -26,36 +28,32 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def create_driver():
-    """إنشاء متصفح Chrome/Chromium."""
+    """إنشاء متصفح Chrome."""
     chrome_options = Options()
-    
-    # تحديد مسار Chromium في GitHub Actions
-    chrome_options.binary_location = "/usr/bin/chromium-browser"
-    
     if HEADLESS:
         chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-notifications")
     chrome_options.add_argument("--mute-audio")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--autoplay-policy=no-user-gesture-required")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-notifications")
     chrome_options.add_argument("--lang=en-US")
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option("useAutomationExtension", False)
-
+    
+    # User-Agent عشوائي
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
     ]
     chrome_options.add_argument(f"--user-agent={random.choice(user_agents)}")
-
-    # استخدام ChromiumDriver
-    service = Service("/usr/bin/chromedriver")
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    
+    driver = webdriver.Chrome(options=chrome_options)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return driver
 
@@ -63,10 +61,10 @@ def watch_video(session_id):
     """تشغيل جلسة مشاهدة واحدة."""
     driver = None
     try:
-        logger.info(f"بدء الجلسة {session_id}")
+        logger.info(f"بدء الجلسة {session_id}/80")
         driver = create_driver()
         driver.get(VIDEO_URL)
-        time.sleep(5)
+        time.sleep(random.uniform(3, 6))  # انتظار عشوائي
 
         # إغلاق نافذة الكوكيز
         try:
@@ -79,31 +77,53 @@ def watch_video(session_id):
             pass
 
         # تشغيل الفيديو
-        video = WebDriverWait(driver, 10).until(
+        video = WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "video.html5-main-video"))
         )
         driver.execute_script("arguments[0].muted = true;", video)
         driver.execute_script("arguments[0].play();", video)
         logger.info(f"جلسة {session_id}: تم تشغيل الفيديو")
 
+        # الانتظار طوال مدة المشاهدة
         time.sleep(WATCH_DURATION)
-        logger.info(f"جلسة {session_id}: انتهت بنجاح")
+        logger.info(f"جلسة {session_id}: انتهت بنجاح ✓")
         return True
 
     except Exception as e:
-        logger.error(f"جلسة {session_id} فشلت: {e}")
+        logger.error(f"جلسة {session_id} فشلت: {str(e)[:100]}")
         return False
     finally:
         if driver:
-            driver.quit()
+            try:
+                driver.quit()
+            except:
+                pass
 
 def main():
     logger.info(f"بدء التشغيل: {NUMBER_OF_SESSIONS} جلسة، {MAX_WORKERS} متوازي")
+    logger.info(f"المدة المتوقعة: حوالي {NUMBER_OF_SESSIONS // MAX_WORKERS} دقيقة")
+    
+    successful = 0
+    failed = 0
+    
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(watch_video, i+1) for i in range(NUMBER_OF_SESSIONS)]
-        results = [f.result() for f in as_completed(futures)]
-    success = sum(results)
-    logger.info(f"اكتمل: {success} نجح، {NUMBER_OF_SESSIONS - success} فشل")
+        
+        for future in as_completed(futures):
+            if future.result():
+                successful += 1
+            else:
+                failed += 1
+            
+            # تأخير عشوائي بين الجلسات
+            if RANDOM_DELAY and successful + failed < NUMBER_OF_SESSIONS:
+                time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
+            
+            # طباعة التقدم كل 10 جلسات
+            if (successful + failed) % 10 == 0:
+                logger.info(f"التقدم: {successful + failed}/80 جلسة مكتملة")
+    
+    logger.info(f"✅ النتيجة النهائية: {successful} نجحت، {failed} فشلت")
 
 if __name__ == "__main__":
     main()
