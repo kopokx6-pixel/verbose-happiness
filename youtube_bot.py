@@ -10,28 +10,25 @@ from selenium_stealth import stealth
 
 # -------------------- إعدادات عامة --------------------
 VIDEO_URL = "https://youtu.be/TCza4Ml9xKs?si=93nVcyRP0u1iCPGU"
-NUMBER_OF_SESSIONS = 5          # عدد الجلسات المطلوبة
-WATCH_DURATION = 60             # مدة المشاهدة بالثواني
-MAX_WORKERS = 3                 # عدد المتصفحات المتوازية
+NUMBER_OF_SESSIONS = 3          # قلل العدد لتقليل الاستهلاك
+WATCH_DURATION = 30             # مدة أقصر للتجربة
+MAX_WORKERS = 2                 # توازي أقل لتفادي الحظر
 USE_PROXY = False
 PROXY_LIST = []
 
-# إعدادات التخفي
 USE_STEALTH = True
 RANDOM_USER_AGENT = True
-HEADLESS = True                 # مهم جدًا في GitHub Actions
+HEADLESS = True                 # يجب أن يكون True في الخادم
 DISABLE_GPU = True
 DISABLE_LOGGING = True
 INCOGNITO = True
 
-# تأخير عشوائي
 RANDOM_DELAY_BETWEEN_SESSIONS = True
 MIN_DELAY = 1
-MAX_DELAY = 5
+MAX_DELAY = 3
 
-MAX_RETRIES = 2
+MAX_RETRIES = 1                 # قلل المحاولات لتفادي الحظر
 
-# -------------------- إعداد السجل --------------------
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -42,13 +39,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# -------------------- قائمة User-Agents --------------------
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 ]
 
 def get_random_user_agent():
@@ -74,7 +68,11 @@ def configure_driver():
     options.add_argument("--disable-infobars")
     options.add_argument("--disable-extensions")
     options.add_argument("--disable-notifications")
-    options.add_argument("--start-maximized")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--autoplay-policy=no-user-gesture-required")
+    options.add_argument("--use-fake-ui-for-media-stream")
+    options.add_argument("--use-fake-device-for-media-stream")
+    options.add_argument("--disable-software-rasterizer")
 
     if RANDOM_USER_AGENT:
         user_agent = get_random_user_agent()
@@ -132,25 +130,33 @@ def play_video(driver, wait):
         logger.warning("لم يتم العثور على عنصر الفيديو")
         return False
 
+    # كتم الصوت
     try:
-        is_paused = driver.execute_script("return document.querySelector('video').paused;")
-        if is_paused:
-            play_button = wait.until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "button.ytp-play-button"))
-            )
-            play_button.click()
-            logger.info("تم الضغط على زر التشغيل")
-        else:
-            logger.info("الفيديو يعمل بالفعل")
+        driver.execute_script("document.querySelector('video').muted = true;")
+    except:
+        pass
+
+    # محاولة التشغيل عبر JavaScript
+    try:
+        driver.execute_script("document.querySelector('video').play();")
+        time.sleep(2)
+        is_playing = driver.execute_script("return !document.querySelector('video').paused;")
+        if is_playing:
+            logger.info("الفيديو يعمل الآن")
+            return True
+    except:
+        pass
+
+    # محاولة النقر على زر التشغيل كخطة بديلة
+    try:
+        play_button = driver.find_element(By.CSS_SELECTOR, "button.ytp-play-button")
+        driver.execute_script("arguments[0].click();", play_button)
+        logger.info("تم النقر على زر التشغيل")
+        time.sleep(2)
         return True
     except:
-        try:
-            driver.execute_script("document.querySelector('video').play();")
-            logger.info("تم التشغيل عبر JavaScript")
-            return True
-        except Exception as e:
-            logger.error(f"فشل تشغيل الفيديو: {e}")
-            return False
+        logger.error("فشل تشغيل الفيديو")
+        return False
 
 def watch_video_once(session_id):
     driver = None
@@ -164,6 +170,15 @@ def watch_video_once(session_id):
 
             driver.get(VIDEO_URL)
             logger.info(f"جلسة {session_id}: تم فتح الصفحة")
+            time.sleep(5)
+            driver.execute_script("window.scrollBy(0, 300);")
+            time.sleep(2)
+
+            # فحص إذا تم التحويل لصفحة تحقق
+            current_url = driver.current_url
+            if "consent" in current_url or "sorry" in current_url:
+                logger.error("تم التحويل إلى صفحة تحقق/حظر")
+                return False
 
             close_cookie_popup(driver, wait)
 
@@ -180,7 +195,7 @@ def watch_video_once(session_id):
             logger.error(f"جلسة {session_id}: خطأ - {e}")
             retries += 1
             if retries > MAX_RETRIES:
-                logger.error(f"جلسة {session_id}: فشلت نهائيًا بعد {MAX_RETRIES} محاولات")
+                logger.error(f"جلسة {session_id}: فشلت نهائيًا")
                 return False
             else:
                 time.sleep(random.uniform(3, 7))
