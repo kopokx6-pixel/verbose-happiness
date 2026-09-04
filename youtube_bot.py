@@ -8,17 +8,13 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-import os
 
 # -------------------- الإعدادات --------------------
-VIDEO_URL = "https://youtu.be/TCza4Ml9xKs?si=93nVcyRP0u1iCPGU"  # ضع رابط الفيديو هنا
-NUMBER_OF_SESSIONS = 5          # عدد الجلسات
-WATCH_DURATION = 60             # مدة المشاهدة بالثواني
-MAX_WORKERS = 3                 # عدد المتصفحات المتوازية
-HEADLESS = True                 # اجعلها True للتشغيل بدون واجهة (مطلوب في السيرفر)
-USE_PROXY = False
-PROXY_LIST = []                 # مثال: ["http://user:pass@ip:port", "http://ip:port"]
+VIDEO_URL = "https://youtu.be/TCza4Ml9xKs?si=93nVcyRP0u1iCPGU"
+NUMBER_OF_SESSIONS = 3
+WATCH_DURATION = 30
+MAX_WORKERS = 2
+HEADLESS = True
 
 # -------------------- السجل --------------------
 logging.basicConfig(
@@ -28,9 +24,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# -------------------- دوال مساعدة --------------------
 def create_driver():
-    """إنشاء متصفح Chrome مع إعدادات محسنة."""
+    """إنشاء متصفح Chrome."""
     chrome_options = Options()
     if HEADLESS:
         chrome_options.add_argument("--headless=new")
@@ -39,14 +34,13 @@ def create_driver():
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--disable-notifications")
-    chrome_options.add_argument("--mute-audio")  # كتم الصوت تلقائيًا
+    chrome_options.add_argument("--mute-audio")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--autoplay-policy=no-user-gesture-required")
     chrome_options.add_argument("--lang=en-US")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option("useAutomationExtension", False)
 
-    # إضافة User-Agent عشوائي
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -54,14 +48,7 @@ def create_driver():
     ]
     chrome_options.add_argument(f"--user-agent={random.choice(user_agents)}")
 
-    # إضافة بروكسي إذا مطلوب
-    if USE_PROXY and PROXY_LIST:
-        proxy = random.choice(PROXY_LIST)
-        chrome_options.add_argument(f'--proxy-server={proxy}')
-
-    # استخدام webdriver-manager لتثبيت التعريف المناسب تلقائيًا
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    driver = webdriver.Chrome(options=chrome_options)
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return driver
 
@@ -72,9 +59,9 @@ def watch_video(session_id):
         logger.info(f"بدء الجلسة {session_id}")
         driver = create_driver()
         driver.get(VIDEO_URL)
-        time.sleep(5)  # انتظار تحميل الصفحة
+        time.sleep(5)
 
-        # محاولة إغلاق نافذة الكوكيز
+        # إغلاق نافذة الكوكيز
         try:
             consent_button = WebDriverWait(driver, 5).until(
                 EC.element_to_be_clickable((By.XPATH, '//button[contains(@aria-label, "Accept")] | //button[contains(., "Accept all")]'))
@@ -84,7 +71,7 @@ def watch_video(session_id):
         except:
             pass
 
-        # التأكد من وجود عنصر الفيديو وكتم الصوت ثم التشغيل
+        # تشغيل الفيديو
         video = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "video.html5-main-video"))
         )
@@ -92,7 +79,6 @@ def watch_video(session_id):
         driver.execute_script("arguments[0].play();", video)
         logger.info(f"جلسة {session_id}: تم تشغيل الفيديو")
 
-        # الانتظار طوال مدة المشاهدة
         time.sleep(WATCH_DURATION)
         logger.info(f"جلسة {session_id}: انتهت بنجاح")
         return True
